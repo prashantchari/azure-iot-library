@@ -1,11 +1,13 @@
 /* Copyright (c) Microsoft Corporation. All Rights Reserved. */
+/* Copyright (c) Microsoft Corporation. All Rights Reserved. */
 
-import { readFile, access, F_OK } from 'fs';
-import { IConfiguration } from './IConfiguration';
-import { getVal } from './getVal';
 import * as azureStorage from 'azure-storage';
+import * as fswatcher from 'chokidar';
+import { access, F_OK, readFile } from 'fs';
+import { getVal } from './getVal';
+import { IConfiguration } from './IConfiguration';
 
-const fileConsumedMsg: string = 'User config file found';
+const fileFoundMsg: string = 'User config file found';
 const fileReadingErrMsg: string =
     'User config file found but unable to be read';
 const fileNotFoundMsg: string =
@@ -23,10 +25,8 @@ export class FileConfiguration implements IConfiguration {
      */
     public async initialize(configFilename: string, storageConnectionString: string = '', logger: Function = console.log): Promise<void> {
         logger = logger || console.log;
-        // Check for file existence
-        let fileConfigPromise;
         if (storageConnectionString) {
-            fileConfigPromise = new Promise<string>((resolve, reject) => {
+            const fileConfigPromise = new Promise<string>((resolve, reject) => {
                 let blobService = new azureStorage.BlobService(storageConnectionString);
                 let containerName = configFilename.split('/')[0];
                 let regexp = new RegExp(`^${containerName}\/`);
@@ -39,6 +39,7 @@ export class FileConfiguration implements IConfiguration {
             }).catch((errMsg) => {
                 throw new Error(fileReadingErrMsg);
             });
+            this.fileConfig = JSON.parse(await fileConfigPromise);
         }
         else {
             try {
@@ -49,20 +50,34 @@ export class FileConfiguration implements IConfiguration {
             }
 
             // Attempt to read file
-            fileConfigPromise = new Promise<string>((resolve, reject) => {
-                readFile(configFilename, 'utf8', (err, result) => {
-                    if (err) {
-                        reject(err);
-                    }
-                    logger(fileConsumedMsg);
-                    resolve(result);
-                });
-            }).catch((errMsg) => {
-                throw new Error(fileReadingErrMsg);
+            logger(fileFoundMsg);
+            this.fileConfig = JSON.parse(await this.loadFile(configFilename));
+
+            // add a watcher for the file
+            const watcher = fswatcher.watch(configFilename, {awaitWriteFinish: true});
+            watcher.on('change', async (path, stats) => {
+                // re-load the config
+                try {
+                    this.fileConfig = JSON.parse(await this.loadFile(configFilename));
+                } catch (error) {
+                    // stay with the last config in case of exceptions
+                    logger(`${fileReadingErrMsg} - ${error.toString()}`);
+                }
             });
         }
-        let fileConfig: string = await fileConfigPromise;
-        this.fileConfig = JSON.parse(fileConfig);
+    }
+
+    private async loadFile(configFilename: string): Promise<string> {
+        return new Promise<string>((resolve, reject) => {
+            readFile(configFilename, 'utf8', (err, result) => {
+                if (err) {
+                    reject(err);
+                }
+                resolve(result);
+            });
+        }).catch((errMsg) => {
+            throw new Error(fileReadingErrMsg);
+        });
     }
 
     private async checkFileExistence(configFilename: string): Promise<void> {
