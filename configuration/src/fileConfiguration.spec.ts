@@ -13,6 +13,7 @@
  */
 
 import { FileConfiguration } from './fileConfiguration';
+import * as fs from 'fs';
 
 describe('File configuration provider', () => {
     let fileConfig: FileConfiguration;
@@ -21,7 +22,7 @@ describe('File configuration provider', () => {
     let keysNotInFile: string[];
 
     // Read file configuration
-    beforeEach(done => async function () {
+    beforeAll(done => async function () {
         // Silence console.log with a spy
         spyOn(console, 'log');
         // Prevent state leakage between specs
@@ -72,6 +73,19 @@ describe('File configuration provider', () => {
         expect(() => fileConfig.getString(['NESTED_OBJECT', 'apples', 'honeycrisp']))
             .not.toThrow();
     });
+
+    it('Verify configuration file is re-loaded when changed', async () => {
+        const original = fs.readFileSync(configFilename, 'utf8');
+        try {
+            fs.writeFile(configFilename, JSON.stringify(Object.assign({ 'TEST': 'DATA' }, fileKeys)));
+            await delay(3000); // yield so the file watcher
+            expect(fileConfig.getString('TEST')).toEqual('DATA');
+        }
+        finally {
+            // restore
+            fs.writeFile(configFilename, original);
+        }
+    });
 });
 
 describe('File configuration provider with bad config file', () => {
@@ -97,3 +111,8 @@ describe('File configuration provider with bad config file', () => {
         await fileConfig.initialize(malformedFilename);
     }().then(done.fail, done));  // note switch of done and done.fail arguments
 });
+
+
+function delay(ms: number) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}

@@ -2,10 +2,10 @@
 /* Copyright (c) Microsoft Corporation. All Rights Reserved. */
 
 import * as azureStorage from 'azure-storage';
-import * as fswatcher from 'chokidar';
 import { access, F_OK, readFile } from 'fs';
 import { getVal } from './getVal';
 import { IConfiguration } from './IConfiguration';
+const fswatcher = require('chokidar');
 
 const fileFoundMsg: string = 'User config file found';
 const fileReadingErrMsg: string =
@@ -13,6 +13,8 @@ const fileReadingErrMsg: string =
 const fileNotFoundMsg: string =
     'No user config file found - using environment variables or ' +
     'configuration service instead';
+const fileReloadSuccessfulMsg: string =
+    'User config file reloaded successfully';
 
 export class FileConfiguration implements IConfiguration {
     private fileConfig: { [key: string]: any } = {};
@@ -54,11 +56,12 @@ export class FileConfiguration implements IConfiguration {
             this.fileConfig = JSON.parse(await this.loadFile(configFilename));
 
             // add a watcher for the file
-            const watcher = fswatcher.watch(configFilename, {awaitWriteFinish: true});
+            const watcher = fswatcher.watch(configFilename, { awaitWriteFinish: true });
             watcher.on('change', async (path, stats) => {
                 // re-load the config
                 try {
                     this.fileConfig = JSON.parse(await this.loadFile(configFilename));
+                    logger(fileReloadSuccessfulMsg);
                 } catch (error) {
                     // stay with the last config in case of exceptions
                     logger(`${fileReadingErrMsg} - ${error.toString()}`);
